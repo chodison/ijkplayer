@@ -580,6 +580,8 @@ typedef struct FFPlayer {
 
     int opensles;
 
+    int inside_release_surface;
+
     char *iformat_name;
 
     struct IjkMediaMeta *meta;
@@ -696,6 +698,7 @@ inline static void ffp_reset_internal(FFPlayer *ffp)
     ffp->mediacodec_auto_rotate         = 0; // option
 
     ffp->opensles                       = 0; // option
+    ffp->inside_release_surface         = 0; // option
 
     ffp->iformat_name                   = NULL; // option
 

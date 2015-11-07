@@ -135,7 +135,10 @@ static const AVOption ffp_context_options[] = {
 
     { "opensles",                           "OpenSL ES: enable",
         OPTION_OFFSET(opensles),            OPTION_INT(0, 0, 1) },
-    
+
+    { "inside-release-surface",                  "OpenSL ES: enable",
+        OPTION_OFFSET(inside_release_surface),   OPTION_INT(0, 0, 1) },
+
     { NULL }
 };
 
