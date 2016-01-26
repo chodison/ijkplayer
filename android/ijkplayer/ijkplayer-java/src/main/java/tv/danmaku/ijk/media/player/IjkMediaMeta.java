@@ -6,6 +6,7 @@ import android.text.TextUtils;
 import java.util.ArrayList;
 import java.util.Locale;
 
+@SuppressWarnings("SameParameterValue")
 public class IjkMediaMeta {
     // media meta
     public static final String IJKM_KEY_FORMAT = "format";
@@ -20,6 +21,7 @@ public class IjkMediaMeta {
     public static final String IJKM_VAL_TYPE__VIDEO = "video";
     public static final String IJKM_VAL_TYPE__AUDIO = "audio";
     public static final String IJKM_VAL_TYPE__UNKNOWN = "unknown";
+    public static final String IJKM_KEY_LANGUAGE = "language";
 
     public static final String IJKM_KEY_CODEC_NAME = "codec_name";
     public static final String IJKM_KEY_CODEC_PROFILE = "codec_profile";
@@ -114,7 +116,7 @@ public class IjkMediaMeta {
     public long mStartUS;
     public long mBitrate;
 
-    public ArrayList<IjkStreamMeta> mStreams = new ArrayList<IjkStreamMeta>();
+    public final ArrayList<IjkStreamMeta> mStreams = new ArrayList<IjkStreamMeta>();
     public IjkStreamMeta mVideoStream;
     public IjkStreamMeta mAudioStream;
 
@@ -199,6 +201,7 @@ public class IjkMediaMeta {
             IjkStreamMeta streamMeta = new IjkStreamMeta(index);
             streamMeta.mMeta = streamBundle;
             streamMeta.mType = streamMeta.getString(IJKM_KEY_TYPE);
+            streamMeta.mLanguage = streamMeta.getString(IJKM_KEY_LANGUAGE);
             if (TextUtils.isEmpty(streamMeta.mType))
                 continue;
 
@@ -241,8 +244,9 @@ public class IjkMediaMeta {
     public static class IjkStreamMeta {
         public Bundle mMeta;
 
-        public int mIndex;
+        public final int mIndex;
         public String mType;
+        public String mLanguage;
 
         // common
         public String mCodecName;
@@ -308,6 +312,14 @@ public class IjkMediaMeta {
             if (!TextUtils.isEmpty(mCodecLongName)) {
                 return mCodecLongName;
             } else if (!TextUtils.isEmpty(mCodecName)) {
+                return mCodecName;
+            } else {
+                return "N/A";
+            }
+        }
+
+        public String getCodecShortNameInline() {
+            if (!TextUtils.isEmpty(mCodecName)) {
                 return mCodecName;
             } else {
                 return "N/A";

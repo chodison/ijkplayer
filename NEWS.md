@@ -1,6 +1,22 @@
 tag next
 --------------------------------
+- ios: support playbackRate change. (iOS 7.0 or later)
+- android: support speed change. (Android 6.0 or later)
+- player: do not link avfilter by default.
+- android: add x86_64 support
+- android: move jjk out to jni4android project
+
+tag k0.4.4
+--------------------------------
+- ios: replace MPMoviePlayerXXX with IJKMPMoviePlayerXXX
+- ios: remove target 'IjkMediaPlayer'. 'IjkMediaFramework' should be used instead.
+- android: switch ExoPlayer to r1.5.2
+
+tag k0.4.3
+--------------------------------
 - android: fix several crash when reconfiguring MediaCodec
+- android: add jjk to generate API native wrapper
+- android: support IMediaDataSource for user to supply media data
 
 tag k0.4.2
 --------------------------------

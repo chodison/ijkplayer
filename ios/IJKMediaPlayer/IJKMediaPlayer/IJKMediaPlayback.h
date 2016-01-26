@@ -22,11 +22,45 @@
 
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
-#import <MediaPlayer/MediaPlayer.h>
 
+typedef NS_ENUM(NSInteger, IJKMPMovieScalingMode) {
+    IJKMPMovieScalingModeNone,       // No scaling
+    IJKMPMovieScalingModeAspectFit,  // Uniform scale until one dimension fits
+    IJKMPMovieScalingModeAspectFill, // Uniform scale until the movie fills the visible bounds. One dimension may have clipped contents
+    IJKMPMovieScalingModeFill        // Non-uniform scale. Both render dimensions will exactly match the visible bounds
+};
+
+typedef NS_ENUM(NSInteger, IJKMPMoviePlaybackState) {
+    IJKMPMoviePlaybackStateStopped,
+    IJKMPMoviePlaybackStatePlaying,
+    IJKMPMoviePlaybackStatePaused,
+    IJKMPMoviePlaybackStateInterrupted,
+    IJKMPMoviePlaybackStateSeekingForward,
+    IJKMPMoviePlaybackStateSeekingBackward
+};
+
+typedef NS_OPTIONS(NSUInteger, IJKMPMovieLoadState) {
+    IJKMPMovieLoadStateUnknown        = 0,
+    IJKMPMovieLoadStatePlayable       = 1 << 0,
+    IJKMPMovieLoadStatePlaythroughOK  = 1 << 1, // Playback will be automatically started in this state when shouldAutoplay is YES
+    IJKMPMovieLoadStateStalled        = 1 << 2, // Playback will be automatically paused in this state, if started
+};
+
+typedef NS_ENUM(NSInteger, IJKMPMovieFinishReason) {
+    IJKMPMovieFinishReasonPlaybackEnded,
+    IJKMPMovieFinishReasonPlaybackError,
+    IJKMPMovieFinishReasonUserExited
+};
+
+// -----------------------------------------------------------------------------
+// Thumbnails
+
+typedef NS_ENUM(NSInteger, IJKMPMovieTimeOption) {
+    IJKMPMovieTimeOptionNearestKeyFrame,
+    IJKMPMovieTimeOptionExact
+};
 
 @protocol IJKMediaPlayback;
-
 
 #pragma mark IJKMediaPlayback
 
@@ -47,14 +81,13 @@
 @property(nonatomic, readonly)  NSInteger bufferingProgress;
 
 @property(nonatomic, readonly)  BOOL isPreparedToPlay;
-@property(nonatomic, readonly)  MPMoviePlaybackState playbackState;
-@property(nonatomic, readonly)  MPMovieLoadState loadState;
+@property(nonatomic, readonly)  IJKMPMoviePlaybackState playbackState;
+@property(nonatomic, readonly)  IJKMPMovieLoadState loadState;
 
 @property(nonatomic, readonly) int64_t numberOfBytesTransferred;
 
-@property(nonatomic) MPMovieControlStyle controlStyle;
 @property(nonatomic, readonly) CGSize naturalSize;
-@property(nonatomic) MPMovieScalingMode scalingMode;
+@property(nonatomic) IJKMPMovieScalingMode scalingMode;
 @property(nonatomic) BOOL shouldAutoplay;
 
 @property (nonatomic) BOOL allowsMediaAirPlay;
@@ -73,50 +106,78 @@
 #define IJK_EXTERN extern __attribute__((visibility ("default")))
 #endif
 
-IJK_EXTERN NSString *const IJKMediaPlaybackIsPreparedToPlayDidChangeNotification;
+// -----------------------------------------------------------------------------
+//  MPMediaPlayback.h
 
-IJK_EXTERN NSString *const IJKMoviePlayerLoadStateDidChangeNotification;
-IJK_EXTERN NSString *const IJKMoviePlayerPlaybackDidFinishNotification;
-IJK_EXTERN NSString *const IJKMoviePlayerPlaybackStateDidChangeNotification;
-IJK_EXTERN NSString *const IJKMoviePlayerVideoSizeChangeNotification;
+// Posted when the prepared state changes of an object conforming to the MPMediaPlayback protocol changes.
+// This supersedes MPMoviePlayerContentPreloadDidFinishNotification.
+IJK_EXTERN NSString *const IJKMPMediaPlaybackIsPreparedToPlayDidChangeNotification;
 
-IJK_EXTERN NSString *const IJKMoviePlayerIsAirPlayVideoActiveDidChangeNotification;
-IJK_EXTERN NSString *const IJKMoviePlayerVideoDecoderOpenNotification;
+// -----------------------------------------------------------------------------
+//  MPMoviePlayerController.h
+//  Movie Player Notifications
 
-IJK_EXTERN NSString *const IJKMoviePlayerFirstVideoFrameRenderedNotification;
-IJK_EXTERN NSString *const IJKMoviePlayerFirstAudioFrameRenderedNotification;
+// Posted when the scaling mode changes.
+IJK_EXTERN NSString* const IJKMPMoviePlayerScalingModeDidChangeNotification;
+
+// Posted when movie playback ends or a user exits playback.
+IJK_EXTERN NSString* const IJKMPMoviePlayerPlaybackDidFinishNotification;
+IJK_EXTERN NSString* const IJKMPMoviePlayerPlaybackDidFinishReasonUserInfoKey; // NSNumber (IJKMPMovieFinishReason)
+
+// Posted when the playback state changes, either programatically or by the user.
+IJK_EXTERN NSString* const IJKMPMoviePlayerPlaybackStateDidChangeNotification;
+
+// Posted when the network load state changes.
+IJK_EXTERN NSString* const IJKMPMoviePlayerLoadStateDidChangeNotification;
+
+// Posted when the movie player begins or ends playing video via AirPlay.
+IJK_EXTERN NSString* const IJKMPMoviePlayerIsAirPlayVideoActiveDidChangeNotification;
+
+// -----------------------------------------------------------------------------
+// Movie Property Notifications
+
+// Calling -prepareToPlay on the movie player will begin determining movie properties asynchronously.
+// These notifications are posted when the associated movie property becomes available.
+IJK_EXTERN NSString* const IJKMPMovieNaturalSizeAvailableNotification;
+
+// -----------------------------------------------------------------------------
+//  Extend Notifications
+
+IJK_EXTERN NSString *const IJKMPMoviePlayerVideoDecoderOpenNotification;
+IJK_EXTERN NSString *const IJKMPMoviePlayerFirstVideoFrameRenderedNotification;
+IJK_EXTERN NSString *const IJKMPMoviePlayerFirstAudioFrameRenderedNotification;
+
 @end
 
-#pragma mark IJKMediaResource
+#pragma mark IJKMediaUrlOpenDelegate
 
-@protocol IJKMediaSegmentResolver <NSObject>
+typedef NS_ENUM(NSInteger, IJKMediaUrlOpenType) {
+    IJKMediaUrlOpenEvent_ConcatResolveSegment = 0x10000,
+    IJKMediaUrlOpenEvent_TcpOpen = 0x10001,
+    IJKMediaUrlOpenEvent_HttpOpen = 0x10002,
+    IJKMediaUrlOpenEvent_LiveOpen = 0x10004,
+};
 
-- (NSString *)urlOfSegment:(int)segmentPosition;
+@interface IJKMediaUrlOpenData: NSObject
+
+- (id)initWithUrl:(NSString *)url
+         openType:(IJKMediaUrlOpenType)openType
+     segmentIndex:(int)segmentIndex
+     retryCounter:(int)retryCounter;
+
+@property(nonatomic, readonly) IJKMediaUrlOpenType openType;
+@property(nonatomic, readonly) int segmentIndex;
+@property(nonatomic, readonly) int retryCounter;
+
+@property(nonatomic, retain) NSString *url;
+@property(nonatomic) int error; // set a negative value to indicate an error has occured.
+@property(nonatomic, getter=isHandled)    BOOL handled;     // auto set to YES if url changed
+@property(nonatomic, getter=isUrlChanged) BOOL urlChanged;  // auto set to YES by url changed
 
 @end
 
-#pragma mark IJKMediaIoDelegate
+@protocol IJKMediaUrlOpenDelegate <NSObject>
 
-/**
- * called before tcp connection
- *
- * @return
- *      original url:   continue connect.
- *      nil:            disconnect.
- *      new url:        use new url to connect.
- */
-@protocol IJKMediaTcpOpenDelegate <NSObject>
-- (NSString *)onTcpOpen:(int)streamIndex url:(NSString *)url;
-@end
+- (void)willOpenUrl:(IJKMediaUrlOpenData*) urlOpenData;
 
-@protocol IJKMediaHttpOpenDelegate <NSObject>
-- (NSString *)onHttpOpen:(int)streamIndex url:(NSString *)url;
-@end
-
-@protocol IJKMediaHttpRetryDelegate <NSObject>
-- (NSString *)onHttpRetry:(int)streamIndex url:(NSString *)url retryCount:(int)retryCount;
-@end
-
-@protocol IJKMediaLiveRetryDelegate <NSObject>
-- (NSString *)onLiveRetry:(int)streamIndex url:(NSString *)url retryCount:(int)retryCount;
 @end

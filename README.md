@@ -1,6 +1,6 @@
-ijkplayer
-=========
-- Video player based on [ffplay](http://ffmpeg.org)
+# ijkplayer [![Build Status](https://travis-ci.org/Bilibili/ijkplayer.svg?branch=master)](https://travis-ci.org/Bilibili/ijkplayer)
+
+Video player based on [ffplay](http://ffmpeg.org)
 
 ### Download
 
@@ -16,16 +16,16 @@ allprojects {
 
 dependencies {
     # required, enough for most devices.
-    compile 'tv.danmaku.ijk.media:ijkplayer-java:0.4.2.4'
-    compile 'tv.danmaku.ijk.media:ijkplayer-armv7a:0.4.2.4'
+    compile 'tv.danmaku.ijk.media:ijkplayer-java:0.4.4.1'
+    compile 'tv.danmaku.ijk.media:ijkplayer-armv7a:0.4.4.1'
 
     # Other ABIs: optional
-    compile 'tv.danmaku.ijk.media:ijkplayer-armv5:0.4.2.4'
-    compile 'tv.danmaku.ijk.media:ijkplayer-arm64:0.4.2.4'
-    compile 'tv.danmaku.ijk.media:ijkplayer-x86:0.4.2.4'
+    compile 'tv.danmaku.ijk.media:ijkplayer-armv5:0.4.4.1'
+    compile 'tv.danmaku.ijk.media:ijkplayer-arm64:0.4.4.1'
+    compile 'tv.danmaku.ijk.media:ijkplayer-x86:0.4.4.1'
 
     # ExoPlayer as IMediaPlayer: optional, experimental
-    compile 'tv.danmaku.ijk.media:ijkplayer-exo:0.4.2.4'
+    compile 'tv.danmaku.ijk.media:ijkplayer-exo:0.4.4.1'
 }
 ```
 - iOS
@@ -135,7 +135,7 @@ sudo dpkg-reconfigure dash
 ```
 git clone https://github.com/Bilibili/ijkplayer.git ijkplayer-android
 cd ijkplayer-android
-git checkout -B latest k0.4.2.4
+git checkout -B latest k0.4.4.1
 
 ./init-android.sh
 
@@ -175,7 +175,7 @@ cd ..
 ```
 git clone https://github.com/Bilibili/ijkplayer.git ijkplayer-ios
 cd ijkplayer-ios
-git checkout -B latest k0.4.2.4
+git checkout -B latest k0.4.4.1
 
 ./init-ios.sh
 
@@ -224,17 +224,17 @@ android/sample is based on or derives from projects below:
 
 ios/IJKMediaDemo is based on or derives from projects below:
 - Unknown license
-  - [iOS7-BarcodeScanner](https://github.com/jpwidmer/iOS7-BarcodeScanner)
+  - [iOS7-BarcodeScanner](https://github.com/jpwiddy/iOS7-BarcodeScanner)
 
 ijkplayer's build scripts are based on or derives from projects below:
 - [gas-preprocessor](http://git.libav.org/?p=gas-preprocessor.git)
 - [VideoLAN](http://git.videolan.org)
 - [yixia/FFmpeg-Android](https://github.com/yixia/FFmpeg-Android)
-- [kewlbear/FFmpeg-iOS-build-script](http://github.com/kewlbear/FFmpeg-iOS-build-script) 
+- [kewlbear/FFmpeg-iOS-build-script](https://github.com/kewlbear/FFmpeg-iOS-build-script) 
 
 ### Commercial Use
 ijkplayer is licensed under LGPLv2.1 or later, so itself is free for commercial use under LGPLv2.1 or later
 
 But ijkplayer is also based on other different projects under various licenses, which I have no idea whether they are compatible to each other or to your product.
 
-[IANAL](http://en.wikipedia.org/wiki/IANAL), you should always ask your lawyer for these stuffs before use it in your product.
+[IANAL](https://en.wikipedia.org/wiki/IANAL), you should always ask your lawyer for these stuffs before use it in your product.

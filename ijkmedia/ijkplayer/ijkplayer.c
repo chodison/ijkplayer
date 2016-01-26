@@ -44,6 +44,10 @@ inline static void ijkmp_destroy(IjkMediaPlayer *mp)
         return;
 
     ffp_destroy_p(&mp->ffplayer);
+    if (mp->msg_thread) {
+        SDL_WaitThread(mp->msg_thread, NULL);
+        mp->msg_thread = NULL;
+    }
 
     pthread_mutex_destroy(&mp->mutex);
 
@@ -209,6 +213,18 @@ void ijkmp_set_playback_rate(IjkMediaPlayer *mp, float rate)
     MPTRACE("%s()=void\n", __func__);
 }
 
+int ijkmp_set_stream_selected(IjkMediaPlayer *mp, int stream, int selected)
+{
+    assert(mp);
+
+    MPTRACE("%s(%d, %d)\n", __func__, stream, selected);
+    pthread_mutex_lock(&mp->mutex);
+    int ret = ffp_set_stream_selected(mp->ffplayer, stream, selected);
+    pthread_mutex_unlock(&mp->mutex);
+    MPTRACE("%s(%d, %d)=%d\n", __func__, stream, selected, ret);
+    return ret;
+}
+
 float ijkmp_get_property_float(IjkMediaPlayer *mp, int id, float default_value)
 {
     assert(mp);
@@ -225,6 +241,25 @@ void ijkmp_set_property_float(IjkMediaPlayer *mp, int id, float value)
 
     pthread_mutex_lock(&mp->mutex);
     ffp_set_property_float(mp->ffplayer, id, value);
+    pthread_mutex_unlock(&mp->mutex);
+}
+
+int64_t ijkmp_get_property_int64(IjkMediaPlayer *mp, int id, int64_t default_value)
+{
+    assert(mp);
+
+    pthread_mutex_lock(&mp->mutex);
+    int64_t ret = ffp_get_property_int64(mp->ffplayer, id, default_value);
+    pthread_mutex_unlock(&mp->mutex);
+    return ret;
+}
+
+void ijkmp_set_property_int64(IjkMediaPlayer *mp, int id, int64_t value)
+{
+    assert(mp);
+
+    pthread_mutex_lock(&mp->mutex);
+    ffp_set_property_int64(mp->ffplayer, id, value);
     pthread_mutex_unlock(&mp->mutex);
 }
 
@@ -324,7 +359,6 @@ static int ijkmp_msg_loop(void *arg)
 {
     IjkMediaPlayer *mp = arg;
     int ret = mp->msg_loop(arg);
-    SDL_DetachThread(mp->msg_thread);
     return ret;
 }
 
@@ -507,7 +541,7 @@ static int ikjmp_chkst_seek_l(int mp_state)
 {
     MPST_RET_IF_EQ(mp_state, MP_STATE_IDLE);
     MPST_RET_IF_EQ(mp_state, MP_STATE_INITIALIZED);
-    // MPST_RET_IF_EQ(mp_state, MP_STATE_ASYNC_PREPARING);
+    MPST_RET_IF_EQ(mp_state, MP_STATE_ASYNC_PREPARING);
     // MPST_RET_IF_EQ(mp_state, MP_STATE_PREPARED);
     // MPST_RET_IF_EQ(mp_state, MP_STATE_STARTED);
     // MPST_RET_IF_EQ(mp_state, MP_STATE_PAUSED);

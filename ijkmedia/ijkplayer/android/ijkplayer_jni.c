@@ -25,13 +25,15 @@
 #include <pthread.h>
 #include <jni.h>
 #include <unistd.h>
+#include "j4a/class/java/util/ArrayList.h"
+#include "j4a/class/android/os/Bundle.h"
+#include "j4a/class/tv/danmaku/ijk/media/player/IjkMediaPlayer.h"
+#include "j4a/class/tv/danmaku/ijk/media/player/misc/IMediaDataSource.h"
 #include "ijksdl/ijksdl_log.h"
 #include "../ff_ffplay.h"
 #include "ffmpeg_api_jni.h"
 #include "ijkplayer_android_def.h"
 #include "ijkplayer_android.h"
-#include "ijksdl/android/android_arraylist.h"
-#include "ijksdl/android/android_bundle.h"
 #include "ijksdl/android/ijksdl_android_jni.h"
 #include "ijksdl/android/ijksdl_codec_android_mediadef.h"
 #include "ijkplayer/ijkavformat/ijkavformat.h"
@@ -50,15 +52,6 @@ static JavaVM* g_jvm;
 typedef struct player_fields_t {
     pthread_mutex_t mutex;
     jclass clazz;
-
-    jfieldID mNativeMediaPlayer;
-
-    jfieldID surface_texture;
-
-    jmethodID jmid_postEventFromNative;
-    jmethodID jmid_onSelectCodec;
-    jmethodID jmid_onControlResolveSegmentUrl;
-    jmethodID jmid_onNativeInvoke;
 } player_fields_t;
 static player_fields_t g_clazz;
 
@@ -69,7 +62,7 @@ static IjkMediaPlayer *jni_get_media_player(JNIEnv* env, jobject thiz)
 {
     pthread_mutex_lock(&g_clazz.mutex);
 
-    IjkMediaPlayer *mp = (IjkMediaPlayer *) (intptr_t) (*env)->GetLongField(env, thiz, g_clazz.mNativeMediaPlayer);
+    IjkMediaPlayer *mp = (IjkMediaPlayer *) (intptr_t) J4AC_IjkMediaPlayer__mNativeMediaPlayer__get__catchAll(env, thiz);
     if (mp) {
         ijkmp_inc_ref(mp);
     }
@@ -82,11 +75,11 @@ static IjkMediaPlayer *jni_set_media_player(JNIEnv* env, jobject thiz, IjkMediaP
 {
     pthread_mutex_lock(&g_clazz.mutex);
 
-    IjkMediaPlayer *old = (IjkMediaPlayer*) (intptr_t) (*env)->GetLongField(env, thiz, g_clazz.mNativeMediaPlayer);
+    IjkMediaPlayer *old = (IjkMediaPlayer*) (intptr_t) J4AC_IjkMediaPlayer__mNativeMediaPlayer__get__catchAll(env, thiz);
     if (mp) {
         ijkmp_inc_ref(mp);
     }
-    (*env)->SetLongField(env, thiz, g_clazz.mNativeMediaPlayer, (intptr_t) mp);
+    J4AC_IjkMediaPlayer__mNativeMediaPlayer__set__catchAll(env, thiz, (intptr_t) mp);
 
     pthread_mutex_unlock(&g_clazz.mutex);
 
@@ -96,6 +89,33 @@ static IjkMediaPlayer *jni_set_media_player(JNIEnv* env, jobject thiz, IjkMediaP
     }
 
     return old;
+}
+
+static int64_t jni_set_media_data_source(JNIEnv* env, jobject thiz, jobject media_data_source)
+{
+    int64_t nativeMediaDataSource = 0;
+
+    pthread_mutex_lock(&g_clazz.mutex);
+
+    jobject old = (jobject) (intptr_t) J4AC_IjkMediaPlayer__mNativeMediaDataSource__get__catchAll(env, thiz);
+    if (old) {
+        J4AC_IMediaDataSource__close__catchAll(env, old);
+        J4A_DeleteGlobalRef__p(env, &old);
+        J4AC_IjkMediaPlayer__mNativeMediaDataSource__set__catchAll(env, thiz, 0);
+    }
+
+    if (media_data_source) {
+        jobject global_media_data_source = (*env)->NewGlobalRef(env, media_data_source);
+        if (J4A_ExceptionCheck__catchAll(env) || !global_media_data_source)
+            goto fail;
+
+        nativeMediaDataSource = (int64_t) (intptr_t) global_media_data_source;
+        J4AC_IjkMediaPlayer__mNativeMediaDataSource__set__catchAll(env, thiz, (jlong) nativeMediaDataSource);
+    }
+
+fail:
+    pthread_mutex_unlock(&g_clazz.mutex);
+    return nativeMediaDataSource;
 }
 
 static int message_loop(void *arg);
@@ -126,8 +146,7 @@ LABEL_RETURN:
 }
 
 static void
-IjkMediaPlayer_setDataSourceFd(
-    JNIEnv *env, jobject thiz, jint fd)
+IjkMediaPlayer_setDataSourceFd(JNIEnv *env, jobject thiz, jint fd)
 {
     MPTRACE("%s\n", __func__);
     int retval = 0;
@@ -141,6 +160,31 @@ IjkMediaPlayer_setDataSourceFd(
 
     ALOGV("setDataSourceFd: dup(%d)=%d\n", fd, dupFd);
     snprintf(uri, sizeof(uri), "pipe:%d", dupFd);
+    retval = ijkmp_set_data_source(mp, uri);
+
+    IJK_CHECK_MPRET_GOTO(retval, env, LABEL_RETURN);
+
+LABEL_RETURN:
+    ijkmp_dec_ref_p(&mp);
+}
+
+static void
+IjkMediaPlayer_setDataSourceCallback(JNIEnv *env, jobject thiz, jobject callback)
+{
+    MPTRACE("%s\n", __func__);
+    int retval = 0;
+    char uri[128];
+    int64_t nativeMediaDataSource = 0;
+    IjkMediaPlayer *mp = jni_get_media_player(env, thiz);
+    JNI_CHECK_GOTO(callback, env, "java/lang/IllegalArgumentException", "mpjni: setDataSourceCallback: null fd", LABEL_RETURN);
+    JNI_CHECK_GOTO(mp, env, "java/lang/IllegalStateException", "mpjni: setDataSourceCallback: null mp", LABEL_RETURN);
+
+    nativeMediaDataSource = jni_set_media_data_source(env, thiz, callback);
+    JNI_CHECK_GOTO(nativeMediaDataSource, env, "java/lang/IllegalStateException", "mpjni: jni_set_media_data_source: NewGlobalRef", LABEL_RETURN);
+
+    ALOGV("setDataSourceCallback: %"PRId64"\n", nativeMediaDataSource);
+    snprintf(uri, sizeof(uri), "ijkmediadatasource:%"PRId64, nativeMediaDataSource);
+
     retval = ijkmp_set_data_source(mp, uri);
 
     IJK_CHECK_MPRET_GOTO(retval, env, LABEL_RETURN);
@@ -278,13 +322,14 @@ IjkMediaPlayer_release(JNIEnv *env, jobject thiz)
     if (!mp)
         return;
 
+    ijkmp_android_set_surface(env, mp, NULL);
     // explicit shutdown mp, in case it is not the last mp-ref here
-    ijkmp_android_set_surface(env, mp, NULL );
     ijkmp_shutdown(mp);
     //only delete weak_thiz at release
     jobject weak_thiz = (jobject) ijkmp_set_weak_thiz(mp, NULL );
     (*env)->DeleteGlobalRef(env, weak_thiz);
-    jni_set_media_player(env, thiz, NULL );
+    jni_set_media_player(env, thiz, NULL);
+    jni_set_media_data_source(env, thiz, NULL);
 
     ijkmp_dec_ref_p(&mp);
 }
@@ -355,6 +400,51 @@ ijkMediaPlayer_setPropertyFloat(JNIEnv *env, jobject thiz, jint id, jfloat value
     JNI_CHECK_GOTO(mp, env, NULL, "mpjni: setPropertyFloat: null mp", LABEL_RETURN);
 
     ijkmp_set_property_float(mp, id, value);
+
+LABEL_RETURN:
+    ijkmp_dec_ref_p(&mp);
+    return;
+}
+
+static jlong
+ijkMediaPlayer_getPropertyLong(JNIEnv *env, jobject thiz, jint id, jlong default_value)
+{
+    jlong value = default_value;
+    IjkMediaPlayer *mp = jni_get_media_player(env, thiz);
+    JNI_CHECK_GOTO(mp, env, NULL, "mpjni: getPropertyLong: null mp", LABEL_RETURN);
+
+    value = ijkmp_get_property_int64(mp, id, default_value);
+
+LABEL_RETURN:
+    ijkmp_dec_ref_p(&mp);
+    return value;
+}
+
+static void
+ijkMediaPlayer_setPropertyLong(JNIEnv *env, jobject thiz, jint id, jlong value)
+{
+    IjkMediaPlayer *mp = jni_get_media_player(env, thiz);
+    JNI_CHECK_GOTO(mp, env, NULL, "mpjni: setPropertyLong: null mp", LABEL_RETURN);
+
+    ijkmp_set_property_int64(mp, id, value);
+
+LABEL_RETURN:
+    ijkmp_dec_ref_p(&mp);
+    return;
+}
+
+static void
+ijkMediaPlayer_setStreamSelected(JNIEnv *env, jobject thiz, jint stream, jboolean selected)
+{
+    IjkMediaPlayer *mp = jni_get_media_player(env, thiz);
+    int ret = 0;
+    JNI_CHECK_GOTO(mp, env, NULL, "mpjni: setStreamSelected: null mp", LABEL_RETURN);
+
+    ret = ijkmp_set_stream_selected(mp, stream, selected);
+    if (ret < 0) {
+        ALOGE("failed to %s %d", selected ? "select" : "deselect", stream);
+        goto LABEL_RETURN;
+    }
 
 LABEL_RETURN:
     ijkmp_dec_ref_p(&mp);
@@ -497,8 +587,7 @@ inline static void fillMetaInternal(JNIEnv *env, jobject jbundle, IjkMediaMeta *
     if (value == NULL )
         value = default_value;
 
-    ASDK_Bundle__putString_c(env, jbundle, key, value);
-    SDL_JNI_CatchException(env);
+    J4AC_Bundle__putString__withCString__catchAll(env, jbundle, key, value);
 }
 
 static jobject
@@ -521,8 +610,8 @@ IjkMediaPlayer_getMediaMeta(JNIEnv *env, jobject thiz)
     ijkmeta_lock(meta);
     is_locked = true;
 
-    jlocal_bundle = ASDK_Bundle__init(env);
-    if (SDL_JNI_RethrowException(env)) {
+    jlocal_bundle = J4AC_Bundle__Bundle(env);
+    if (J4A_ExceptionCheck__throwAny(env)) {
         goto LABEL_RETURN;
     }
 
@@ -534,8 +623,8 @@ IjkMediaPlayer_getMediaMeta(JNIEnv *env, jobject thiz)
     fillMetaInternal(env, jlocal_bundle, meta, IJKM_KEY_VIDEO_STREAM, "-1");
     fillMetaInternal(env, jlocal_bundle, meta, IJKM_KEY_AUDIO_STREAM, "-1");
 
-    jarray_list = ASDK_ArrayList__init(env);
-    if (SDL_JNI_RethrowException(env)) {
+    jarray_list = J4AC_ArrayList__ArrayList(env);
+    if (J4A_ExceptionCheck__throwAny(env)) {
         goto LABEL_RETURN;
     }
 
@@ -543,12 +632,13 @@ IjkMediaPlayer_getMediaMeta(JNIEnv *env, jobject thiz)
     for (size_t i = 0; i < count; ++i) {
         IjkMediaMeta *streamRawMeta = ijkmeta_get_child_l(meta, i);
         if (streamRawMeta) {
-            jstream_bundle = ASDK_Bundle__init(env);
-            if (SDL_JNI_RethrowException(env)) {
+            jstream_bundle = J4AC_Bundle__Bundle(env);
+            if (J4A_ExceptionCheck__throwAny(env)) {
                 goto LABEL_RETURN;
             }
 
-            fillMetaInternal(env, jstream_bundle, streamRawMeta, IJKM_KEY_TYPE, IJKM_VAL_TYPE__UNKNOWN);
+            fillMetaInternal(env, jstream_bundle, streamRawMeta, IJKM_KEY_TYPE,     IJKM_VAL_TYPE__UNKNOWN);
+            fillMetaInternal(env, jstream_bundle, streamRawMeta, IJKM_KEY_LANGUAGE, NULL);
             const char *type = ijkmeta_get_string_l(streamRawMeta, IJKM_KEY_TYPE);
             if (type) {
                 fillMetaInternal(env, jstream_bundle, streamRawMeta, IJKM_KEY_CODEC_NAME, NULL );
@@ -571,8 +661,8 @@ IjkMediaPlayer_getMediaMeta(JNIEnv *env, jobject thiz)
                     fillMetaInternal(env, jstream_bundle, streamRawMeta, IJKM_KEY_SAMPLE_RATE, NULL );
                     fillMetaInternal(env, jstream_bundle, streamRawMeta, IJKM_KEY_CHANNEL_LAYOUT, NULL );
                 }
-                ASDK_ArrayList__add(env, jarray_list, jstream_bundle);
-                if (SDL_JNI_RethrowException(env)) {
+                J4AC_ArrayList__add(env, jarray_list, jstream_bundle);
+                if (J4A_ExceptionCheck__throwAny(env)) {
                     goto LABEL_RETURN;
                 }
             }
@@ -581,7 +671,7 @@ IjkMediaPlayer_getMediaMeta(JNIEnv *env, jobject thiz)
         }
     }
 
-    ASDK_Bundle__putParcelableArrayList_c(env, jlocal_bundle, IJKM_KEY_STREAMS, jarray_list);
+    J4AC_Bundle__putParcelableArrayList__withCString__catchAll(env, jlocal_bundle, IJKM_KEY_STREAMS, jarray_list);
     jret_bundle = jlocal_bundle;
     jlocal_bundle = NULL;
 LABEL_RETURN:
@@ -611,7 +701,7 @@ IjkMediaPlayer_native_setup(JNIEnv *env, jobject thiz, jobject weak_this)
 
     jni_set_media_player(env, thiz, mp);
     ijkmp_set_weak_thiz(mp, (*env)->NewGlobalRef(env, weak_this));
-    ijkmp_set_inject_opaque(mp, (*env)->NewGlobalRef(env, weak_this));
+    ijkmp_set_inject_opaque(mp, ijkmp_get_weak_thiz(mp));
     ijkmp_android_set_mediacodec_select_callback(mp, mediacodec_select_callback, (*env)->NewGlobalRef(env, weak_this));
 
 LABEL_RETURN:
@@ -625,29 +715,6 @@ IjkMediaPlayer_native_finalize(JNIEnv *env, jobject thiz, jobject name, jobject 
     IjkMediaPlayer_release(env, thiz);
 }
 
-static int
-_onNativeControlResolveSegment(JNIEnv *env, jobject weak_thiz, int type, void *data, size_t data_size)
-{
-    if (weak_thiz == NULL || data == NULL )
-        return -1;
-
-    IJKAVInject_OnUrlOpenData *real_data = (IJKAVInject_OnUrlOpenData *) data;
-
-    jstring url = (*env)->CallStaticObjectMethod(env, g_clazz.clazz, g_clazz.jmid_onControlResolveSegmentUrl, weak_thiz, real_data->segment_index);
-    if (url == NULL )
-        return -1;
-
-    const char* c_url = (*env)->GetStringUTFChars(env, url, NULL );
-    if (c_url == NULL )
-        return -1;
-
-    strlcpy(real_data->url, c_url, sizeof(real_data->url));
-    real_data->url[sizeof(real_data->url) - 1] = 0;
-
-    (*env)->ReleaseStringUTFChars(env, url, c_url);
-    return 0;
-}
-
 // NOTE: support to be called from read_thread
 static int
 inject_callback(void *opaque, int what, void *data, size_t data_size)
@@ -655,6 +722,7 @@ inject_callback(void *opaque, int what, void *data, size_t data_size)
     JNIEnv     *env     = NULL;
     jobject     jbundle = NULL;
     int         ret     = -1;
+    int         is_handled = 0;
     SDL_JNI_SetupThreadEnv(&env);
 
     jobject weak_thiz = (jobject) opaque;
@@ -662,29 +730,33 @@ inject_callback(void *opaque, int what, void *data, size_t data_size)
         goto fail;
 
     switch (what) {
-    case IJKAVINJECT_CONCAT_RESOLVE_SEGMENT: {
-        ret = _onNativeControlResolveSegment(env, weak_thiz, what, data, data_size);
-        break;
-    }
+    case IJKAVINJECT_CONCAT_RESOLVE_SEGMENT:
     case IJKAVINJECT_ON_TCP_OPEN:
     case IJKAVINJECT_ON_HTTP_OPEN:
     case IJKAVINJECT_ON_HTTP_RETRY:
     case IJKAVINJECT_ON_LIVE_RETRY: {
         IJKAVInject_OnUrlOpenData *real_data = (IJKAVInject_OnUrlOpenData *) data;
-        jbundle = ASDK_Bundle__init(env);
-        if (SDL_JNI_CatchException(env) || !jbundle) {
+        real_data->is_handled = 0;
+
+        jbundle = J4AC_Bundle__Bundle__catchAll(env);
+        if (!jbundle) {
             ALOGE("%s: ASDK_Bundle__init failed\n", __func__);
             goto fail;
         }
 
-        ASDK_Bundle__putString_c(env, jbundle,  "url",           real_data->url);
-        ASDK_Bundle__putInt_c(env, jbundle,     "segment_index", real_data->segment_index);
-        ASDK_Bundle__putInt_c(env, jbundle,     "retry_counter", real_data->retry_counter);
+        J4AC_Bundle__putString__withCString__catchAll(env, jbundle,  "url",           real_data->url);
+        J4AC_Bundle__putInt__withCString__catchAll(env, jbundle,     "segment_index", real_data->segment_index);
+        J4AC_Bundle__putInt__withCString__catchAll(env, jbundle,     "retry_counter", real_data->retry_counter);
 
-        if (!(*env)->CallStaticBooleanMethod(env, g_clazz.clazz, g_clazz.jmid_onNativeInvoke, weak_thiz, what, jbundle))
+        is_handled = J4AC_IjkMediaPlayer__onNativeInvoke__catchAll(env, weak_thiz, what, jbundle);
+        if (J4A_ExceptionCheck__catchAll(env))
             goto fail;
 
-        ASDK_Bundle__getString_cbuf(env, jbundle, "url", real_data->url, sizeof(real_data->url));
+        J4AC_Bundle__getString__withCString__asCBuffer(env, jbundle, "url", real_data->url, sizeof(real_data->url));
+        if (J4A_ExceptionCheck__catchAll(env))
+            goto fail;
+
+        real_data->is_handled = is_handled;
         ret = 0;
         break;
     }
@@ -694,7 +766,6 @@ inject_callback(void *opaque, int what, void *data, size_t data_size)
     }
 
 fail:
-    SDL_JNI_CatchException(env);
     SDL_JNI_DeleteLocalRefP(env, &jbundle);
     return ret;
 }
@@ -702,50 +773,28 @@ fail:
 static bool mediacodec_select_callback(void *opaque, ijkmp_mediacodecinfo_context *mcc)
 {
     JNIEnv *env = NULL;
-    jobject jmime = NULL;
-    jstring jcodec_name = NULL;
     jobject weak_this = (jobject) opaque;
-    const char *codec_name = NULL;
-    bool found_codec = false;
+    const char *found_codec_name = NULL;
 
     if (JNI_OK != SDL_JNI_SetupThreadEnv(&env)) {
         ALOGE("%s: SetupThreadEnv failed\n", __func__);
         return -1;
     }
 
-    jmime = (*env)->NewStringUTF(env, mcc->mime_type);
-    if (SDL_JNI_CatchException(env) || !jmime) {
+    found_codec_name = J4AC_IjkMediaPlayer__onSelectCodec__withCString__asCBuffer(env, weak_this, mcc->mime_type, mcc->profile, mcc->level, mcc->codec_name, sizeof(mcc->codec_name));
+    if (J4A_ExceptionCheck__catchAll(env) || !found_codec_name) {
+        ALOGE("%s: onSelectCodec failed\n", __func__);
         goto fail;
     }
 
-    jcodec_name = (*env)->CallStaticObjectMethod(env, g_clazz.clazz, g_clazz.jmid_onSelectCodec, weak_this, jmime, mcc->profile, mcc->level);
-    if (SDL_JNI_CatchException(env) || !jcodec_name) {
-        goto fail;
-    }
-
-    codec_name = (*env)->GetStringUTFChars(env, jcodec_name, NULL );
-    if (!codec_name || !*codec_name) {
-        goto fail;
-    }
-
-    strncpy(mcc->codec_name, codec_name, sizeof(mcc->codec_name) / sizeof(*mcc->codec_name));
-    mcc->codec_name[sizeof(mcc->codec_name) / sizeof(*mcc->codec_name) - 1] = 0;
-    found_codec = true;
-    fail:
-    if (codec_name) {
-        (*env)->ReleaseStringUTFChars(env, jcodec_name, codec_name);
-        codec_name = NULL;
-    }
-
-    SDL_JNI_DeleteLocalRefP(env, &jcodec_name);
-    SDL_JNI_DeleteLocalRefP(env, &jmime);
-    return found_codec;
+fail:
+    return found_codec_name;
 }
 
 inline static void post_event(JNIEnv *env, jobject weak_this, int what, int arg1, int arg2)
 {
     // MPTRACE("post_event(%p, %p, %d, %d, %d)", (void*)env, (void*) weak_this, what, arg1, arg2);
-    (*env)->CallStaticVoidMethod(env, g_clazz.clazz, g_clazz.jmid_postEventFromNative, weak_this, what, arg1, arg2, NULL );
+    J4AC_IjkMediaPlayer__postEventFromNative(env, weak_this, what, arg1, arg2, NULL);
     // MPTRACE("post_event()=void");
 }
 
@@ -920,7 +969,8 @@ static JNINativeMethod g_methods[] = {
         "(Ljava/lang/String;[Ljava/lang/String;[Ljava/lang/String;)V",
         (void *) IjkMediaPlayer_setDataSourceAndHeaders
     },
-    { "_setDataSourceFd",       "(I)V",   (void *) IjkMediaPlayer_setDataSourceFd },
+    { "_setDataSourceFd",       "(I)V",     (void *) IjkMediaPlayer_setDataSourceFd },
+    { "_setDataSource",         "(Ltv/danmaku/ijk/media/player/misc/IMediaDataSource;)V", (void *)IjkMediaPlayer_setDataSourceCallback },
 
     { "_setVideoSurface",       "(Landroid/view/Surface;)V", (void *) IjkMediaPlayer_setVideoSurface },
     { "_prepareAsync",          "()V",      (void *) IjkMediaPlayer_prepareAsync },
@@ -950,6 +1000,9 @@ static JNINativeMethod g_methods[] = {
     { "_getLoopCount",          "()I",                      (void *) IjkMediaPlayer_getLoopCount },
     { "_getPropertyFloat",      "(IF)F",                    (void *) ijkMediaPlayer_getPropertyFloat },
     { "_setPropertyFloat",      "(IF)V",                    (void *) ijkMediaPlayer_setPropertyFloat },
+    { "_getPropertyLong",       "(IJ)J",                    (void *) ijkMediaPlayer_getPropertyLong },
+    { "_setPropertyLong",       "(IJ)V",                    (void *) ijkMediaPlayer_setPropertyLong },
+    { "_setStreamSelected",     "(IZ)V",                    (void *) ijkMediaPlayer_setStreamSelected },
 
     { "native_profileBegin",    "(Ljava/lang/String;)V",    (void *) IjkMediaPlayer_native_profileBegin },
     { "native_profileEnd",      "()V",                      (void *) IjkMediaPlayer_native_profileEnd },
@@ -972,21 +1025,6 @@ JNIEXPORT jint JNI_OnLoad(JavaVM *vm, void *reserved)
     // FindClass returns LocalReference
     IJK_FIND_JAVA_CLASS(env, g_clazz.clazz, JNI_CLASS_IJKPLAYER);
     (*env)->RegisterNatives(env, g_clazz.clazz, g_methods, NELEM(g_methods) );
-
-    g_clazz.mNativeMediaPlayer = (*env)->GetFieldID(env, g_clazz.clazz, "mNativeMediaPlayer", "J");
-    IJK_CHECK_RET(g_clazz.mNativeMediaPlayer, -1, "missing mNativeMediaPlayer");
-
-    IJK_FIND_JAVA_STATIC_METHOD(env, g_clazz.jmid_postEventFromNative, g_clazz.clazz,
-        "postEventFromNative", "(Ljava/lang/Object;IIILjava/lang/Object;)V");
-
-    IJK_FIND_JAVA_STATIC_METHOD(env, g_clazz.jmid_onSelectCodec, g_clazz.clazz,
-        "onSelectCodec", "(Ljava/lang/Object;Ljava/lang/String;II)Ljava/lang/String;");
-
-    IJK_FIND_JAVA_STATIC_METHOD(env, g_clazz.jmid_onControlResolveSegmentUrl, g_clazz.clazz,
-        "onControlResolveSegmentUrl", "(Ljava/lang/Object;I)Ljava/lang/String;");
-
-    IJK_FIND_JAVA_STATIC_METHOD(env, g_clazz.jmid_onNativeInvoke, g_clazz.clazz,
-        "onNativeInvoke", "(Ljava/lang/Object;ILandroid/os/Bundle;)Z");
 
     ijkmp_global_init();
     ijkmp_global_set_inject_callback(inject_callback);

@@ -39,16 +39,35 @@ typedef struct {
     int64_t         opaque;
 } Context;
 
-static void *ijkinject_get_opaque(AVFormatContext *avf) {
-    Context *c = avf->priv_data;
-#ifdef __GNUC__
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wint-to-pointer-cast"
-#endif
-    return (void *)c->opaque;
-#ifdef __GNUC__
-#pragma GCC diagnostic pop
-#endif
+static int ijkurlhook_call_inject(AVFormatContext *h)
+{
+    Context *c = h->priv_data;
+    IjkAVInjectCallback inject_callback = ijkav_get_inject_callback();
+    void *opaque = (void *) (intptr_t) c->opaque;
+    int ret = 0;
+
+    if (ff_check_interrupt(&h->interrupt_callback)) {
+        ret = AVERROR_EXIT;
+        goto fail;
+    }
+
+    if (opaque && inject_callback) {
+        av_log(h, AV_LOG_INFO, "livehook %s\n", c->inject_data.url);
+        c->inject_data.is_handled = 0;
+        ret = inject_callback(opaque, IJKAVINJECT_ON_LIVE_RETRY, &c->inject_data, sizeof(c->inject_data));
+        if (ret || !c->inject_data.url[0]) {
+            ret = AVERROR_EXIT;
+            goto fail;
+        }
+    }
+
+    if (ff_check_interrupt(&h->interrupt_callback)) {
+        ret = AVERROR_EXIT;
+        goto fail;
+    }
+
+fail:
+    return ret;
 }
 
 static int ijklivehook_probe(AVProbeData *probe)
@@ -96,31 +115,14 @@ static int copy_stream_props(AVStream *st, AVStream *source_st)
 
 static int open_inner(AVFormatContext *avf)
 {
-    Context                *c               = avf->priv_data;
-    void                   *opaque          = ijkinject_get_opaque(avf);
-    IjkAVInjectCallback     inject_callback = ijkav_get_inject_callback();
-    AVDictionary           *tmp_opts        = NULL;
+    Context         *c          = avf->priv_data;
+    AVDictionary    *tmp_opts   = NULL;
+    AVFormatContext *new_avf    = NULL;
     int ret = -1;
     int i   = 0;
 
-    if (ff_check_interrupt(&avf->interrupt_callback)) {
-        ret = AVERROR_EXIT;
-        goto fail;
-    }
-
-    if (c->inject_data.retry_counter > 0) {
-        av_log(avf, AV_LOG_INFO, "live-hook-retry %s (%d)\n", c->inject_data.url, c->inject_data.retry_counter);
-        ret = inject_callback(opaque, IJKAVINJECT_ON_LIVE_RETRY, &c->inject_data, sizeof(c->inject_data));
-        if (ret || !c->inject_data.url[0]) {
-            ret = AVERROR_EXIT;
-            goto fail;
-        }
-    }
-
-    avformat_close_input(&c->inner);
-
-    c->inner = avformat_alloc_context();
-    if (!c->inner) {
+    new_avf = avformat_alloc_context();
+    if (!new_avf) {
         ret = AVERROR(ENOMEM);
         goto fail;
     }
@@ -128,32 +130,34 @@ static int open_inner(AVFormatContext *avf)
     if (c->open_opts)
         av_dict_copy(&tmp_opts, c->open_opts, 0);
 
-    c->inner->interrupt_callback = avf->interrupt_callback;
-    ret = avformat_open_input(&c->inner, c->inject_data.url, NULL, &tmp_opts);
+    new_avf->interrupt_callback = avf->interrupt_callback;
+    ret = avformat_open_input(&new_avf, c->inject_data.url, NULL, &tmp_opts);
     if (ret < 0)
         goto fail;
 
-    ret = avformat_find_stream_info(c->inner, NULL);
+    ret = avformat_find_stream_info(new_avf, NULL);
     if (ret < 0)
         goto fail;
 
-    for (i = 0; i < c->inner->nb_streams; i++) {
+    for (i = 0; i < new_avf->nb_streams; i++) {
         AVStream *st = avformat_new_stream(avf, NULL);
         if (!st) {
             ret = AVERROR(ENOMEM);
             goto fail;
         }
 
-        ret = copy_stream_props(st, c->inner->streams[i]);
+        ret = copy_stream_props(st, new_avf->streams[i]);
         if (ret < 0)
             goto fail;
     }
 
-    av_dict_free(&tmp_opts);
-    return 0;
+    avformat_close_input(&c->inner);
+    c->inner = new_avf;
+    new_avf = NULL;
+    ret = 0;
 fail:
     av_dict_free(&tmp_opts);
-    avformat_close_input(&c->inner);
+    avformat_close_input(&new_avf);
     return ret;
 }
 
@@ -179,15 +183,19 @@ static int ijklivehook_read_header(AVFormatContext *avf, AVDictionary **options)
         av_dict_copy(&c->open_opts, *options, 0);
 
     c->inject_data.retry_counter = 0;
-
     ret = open_inner(avf);
     while (ret < 0) {
-        c->inject_data.retry_counter++;
-
         // no EOF in live mode
         switch (ret) {
             case AVERROR_EXIT:
                 goto fail;
+        }
+
+        c->inject_data.retry_counter++;
+        ret = ijkurlhook_call_inject(avf);
+        if (ret) {
+            ret = AVERROR_EXIT;
+            goto fail;
         }
 
         c->discontinuity = 1;
@@ -207,16 +215,13 @@ static int ijklivehook_read_packet(AVFormatContext *avf, AVPacket *pkt)
     if (c->error)
         return c->error;
 
-    c->inject_data.retry_counter = 0;
-
     if (c->inner)
         ret = av_read_frame(c->inner, pkt);
 
+    c->inject_data.retry_counter = 0;
     while (ret < 0) {
         if (c->inner && c->inner->pb && c->inner->pb->error && avf->pb)
             avf->pb->error = c->inner->pb->error;
-
-        c->inject_data.retry_counter++;
 
         // no EOF in live mode
         switch (ret) {
@@ -225,6 +230,13 @@ static int ijklivehook_read_packet(AVFormatContext *avf, AVPacket *pkt)
                 goto fail;
             case AVERROR(EAGAIN):
                 goto continue_read;
+        }
+
+        c->inject_data.retry_counter++;
+        ret = ijkurlhook_call_inject(avf);
+        if (ret) {
+            ret = AVERROR_EXIT;
+            goto fail;
         }
 
         c->discontinuity = 1;
@@ -276,4 +288,3 @@ AVInputFormat ijkff_ijklivehook_demuxer = {
     .read_close     = ijklivehook_read_close,
     .priv_class     = &ijklivehook_class,
 };
-

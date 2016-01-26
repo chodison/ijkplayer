@@ -72,13 +72,8 @@ typedef enum IJKLogLevel {
 - (id)initWithContentURL:(NSURL *)aUrl
              withOptions:(IJKFFOptions *)options;
 
-- (id)initWithContentURL:(NSURL *)aUrl
-             withOptions:(IJKFFOptions *)options
-     withSegmentResolver:(id<IJKMediaSegmentResolver>)segmentResolver;
-
 - (id)initWithContentURLString:(NSString *)aUrlString
-                   withOptions:(IJKFFOptions *)options
-           withSegmentResolver:(id<IJKMediaSegmentResolver>)segmentResolver;
+                   withOptions:(IJKFFOptions *)options;
 
 - (void)prepareToPlay;
 - (void)play;
@@ -99,6 +94,7 @@ typedef enum IJKLogLevel {
 
 @property(nonatomic, readonly) CGFloat fpsInMeta;
 @property(nonatomic, readonly) CGFloat fpsAtOutput;
+@property(nonatomic) BOOL shouldShowHudView;
 
 - (void)setOptionValue:(NSString *)value
                 forKey:(NSString *)key
@@ -120,10 +116,10 @@ typedef enum IJKLogLevel {
 - (void)setSwsOptionIntValue:       (int64_t)value forKey:(NSString *)key;
 - (void)setPlayerOptionIntValue:    (int64_t)value forKey:(NSString *)key;
 
-@property (nonatomic, weak) id<IJKMediaTcpOpenDelegate>     tcpOpenDelegate;
-@property (nonatomic, weak) id<IJKMediaHttpOpenDelegate>    httpOpenDelegate;
-@property (nonatomic, weak) id<IJKMediaHttpRetryDelegate>   httpRetryDelegate;
-@property (nonatomic, weak) id<IJKMediaLiveRetryDelegate>   liveRetryDelegate;
+@property (nonatomic, retain) id<IJKMediaUrlOpenDelegate> segmentOpenDelegate;
+@property (nonatomic, retain) id<IJKMediaUrlOpenDelegate> tcpOpenDelegate;
+@property (nonatomic, retain) id<IJKMediaUrlOpenDelegate> httpOpenDelegate;
+@property (nonatomic, retain) id<IJKMediaUrlOpenDelegate> liveOpenDelegate;
 
 @end
 
