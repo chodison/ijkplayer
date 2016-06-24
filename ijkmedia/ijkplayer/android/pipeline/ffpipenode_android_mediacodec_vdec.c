@@ -249,7 +249,7 @@ static int amc_fill_frame(
 
     frame->width  = opaque->frame_width;
     frame->height = opaque->frame_height;
-    frame->format = SDL_FCC__AMC;
+    frame->format = IJK_AV_PIX_FMT__ANDROID_MEDIACODEC;
     frame->sample_aspect_ratio = opaque->avctx->sample_aspect_ratio;
     frame->pts    = av_rescale_q(buffer_info->presentationTimeUs, AV_TIME_BASE_Q, is->video_st->time_base);
     if (frame->pts < 0)
@@ -323,7 +323,7 @@ static int feed_input_buffer(JNIEnv *env, IJKFF_Pipenode *node, int64_t timeUs, 
                 d->next_pts_tb = d->start_pts_tb;
             }
         } while (ffp_is_flush_packet(&pkt) || d->queue->serial != d->pkt_serial);
-        av_free_packet(&d->pkt);
+        av_packet_unref(&d->pkt);
         d->pkt_temp = d->pkt = pkt;
         d->packet_pending = 1;
 #if AMC_USE_AVBITSTREAM_FILTER
@@ -1007,6 +1007,16 @@ IJKFF_Pipenode *ffpipenode_create_video_decoder_from_android_mediacodec(FFPlayer
         opaque->mcc.profile = opaque->avctx->profile;
         opaque->mcc.level   = opaque->avctx->level;
         break;
+    case AV_CODEC_ID_MPEG2VIDEO:
+        if (!ffp->mediacodec_mpeg2 && !ffp->mediacodec_all_videos) {
+            ALOGE("%s: MediaCodec/MPEG2VIDEO is disabled. codec_id:%d \n", __func__, opaque->avctx->codec_id);
+            goto fail;
+        }
+        strcpy(opaque->mcc.mime_type, SDL_AMIME_VIDEO_MPEG2VIDEO);
+        opaque->mcc.profile = opaque->avctx->profile;
+        opaque->mcc.level   = opaque->avctx->level;
+        break;
+
     default:
         ALOGE("%s:create: not H264 or H265/HEVC, codec_id:%d \n", __func__, opaque->avctx->codec_id);
         goto fail;

@@ -18,11 +18,13 @@
 # IJK_FFMPEG_UPSTREAM=git://git.videolan.org/ffmpeg.git
 IJK_FFMPEG_UPSTREAM=https://github.com/Bilibili/FFmpeg.git
 IJK_FFMPEG_FORK=https://github.com/Bilibili/FFmpeg.git
-IJK_FFMPEG_COMMIT=ff2.8--ijk0.4.1.1--dev0.3.3--rc4
+IJK_FFMPEG_COMMIT=ff3.0--ijk0.5.0--dev0.4.5--rc11
 IJK_FFMPEG_LOCAL_REPO=extra/ffmpeg
 
 set -e
 TOOLS=tools
+
+git --version
 
 echo "== pull ffmpeg base =="
 sh $TOOLS/pull-repo-base.sh $IJK_FFMPEG_UPSTREAM $IJK_FFMPEG_LOCAL_REPO

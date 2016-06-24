@@ -28,6 +28,7 @@
 #include "ijksdl/ijksdl_vout.h"
 #include "ijksdl/ijksdl_vout_internal.h"
 #include "ijksdl/ijksdl_container.h"
+#include "ijksdl/ijksdl_egl.h"
 #include "ijksdl/ffmpeg/ijksdl_vout_overlay_ffmpeg.h"
 #include "ijksdl_codec_android_mediacodec.h"
 #include "ijksdl_inc_internal_android.h"
@@ -87,22 +88,24 @@ typedef struct SDL_Vout_Opaque {
 
     ISDL_Array       overlay_manager;
     ISDL_Array       overlay_pool;
+
+    IJK_EGL         *egl;
 } SDL_Vout_Opaque;
 
-static SDL_VoutOverlay *func_create_overlay_l(int width, int height, Uint32 format, SDL_Vout *vout)
+static SDL_VoutOverlay *func_create_overlay_l(int width, int height, int frame_format, SDL_Vout *vout)
 {
-    switch (format) {
-    case SDL_FCC__AMC:
-        return SDL_VoutAMediaCodec_CreateOverlay(width, height, format, vout);
+    switch (frame_format) {
+    case IJK_AV_PIX_FMT__ANDROID_MEDIACODEC:
+        return SDL_VoutAMediaCodec_CreateOverlay(width, height, vout);
     default:
-        return SDL_VoutFFmpeg_CreateOverlay(width, height, format, vout);
+        return SDL_VoutFFmpeg_CreateOverlay(width, height, frame_format, vout);
     }
 }
 
-static SDL_VoutOverlay *func_create_overlay(int width, int height, Uint32 format, SDL_Vout *vout)
+static SDL_VoutOverlay *func_create_overlay(int width, int height, int frame_format, SDL_Vout *vout)
 {
     SDL_LockMutex(vout->mutex);
-    SDL_VoutOverlay *overlay = func_create_overlay_l(width, height, format, vout);
+    SDL_VoutOverlay *overlay = func_create_overlay_l(width, height, frame_format, vout);
     SDL_UnlockMutex(vout->mutex);
     return overlay;
 }
@@ -127,6 +130,8 @@ static void func_free_l(SDL_Vout *vout)
             opaque->native_window = NULL;
         }
 
+        IJK_EGL_freep(&opaque->egl);
+
         SDL_AMediaCodec_decreaseReferenceP(&opaque->acodec);
     }
 
@@ -141,7 +146,7 @@ static int func_display_overlay_l(SDL_Vout *vout, SDL_VoutOverlay *overlay)
     if (!native_window) {
         if (!opaque->null_native_window_warned) {
             opaque->null_native_window_warned = 1;
-            ALOGW("voud_display_overlay_l: NULL native_window");
+            ALOGW("func_display_overlay_l: NULL native_window");
         }
         return -1;
     } else {
@@ -149,21 +154,42 @@ static int func_display_overlay_l(SDL_Vout *vout, SDL_VoutOverlay *overlay)
     }
 
     if (!overlay) {
-        ALOGE("voud_display_overlay_l: NULL overlay");
+        ALOGE("func_display_overlay_l: NULL overlay");
         return -1;
     }
 
     if (overlay->w <= 0 || overlay->h <= 0) {
-        ALOGE("voud_display_overlay_l: invalid overlay dimensions(%d, %d)", overlay->w, overlay->h);
+        ALOGE("func_display_overlay_l: invalid overlay dimensions(%d, %d)", overlay->w, overlay->h);
         return -1;
     }
 
     switch(overlay->format) {
-    case SDL_FCC__AMC:
+    case SDL_FCC__AMC: {
+        // only ANativeWindow support
+        IJK_EGL_terminate(opaque->egl);
         return SDL_VoutOverlayAMediaCodec_releaseFrame_l(overlay, NULL, true);
-    default:
-        return SDL_Android_NativeWindow_display_l(native_window, overlay);
     }
+    case SDL_FCC_RV24:
+    case SDL_FCC_I420:
+    case SDL_FCC_I444P10LE: {
+        // only GLES support
+        if (opaque->egl)
+            return IJK_EGL_display(opaque->egl, native_window, overlay);
+        break;
+    }
+    case SDL_FCC_YV12:
+    case SDL_FCC_RV16:
+    case SDL_FCC_RV32: {
+        // both GLES & ANativeWindow support
+        if (vout->overlay_format == SDL_FCC__GLES2 && opaque->egl)
+            return IJK_EGL_display(opaque->egl, native_window, overlay);
+        break;
+    }
+    }
+
+    // fallback to ANativeWindow
+    IJK_EGL_terminate(opaque->egl);
+    return SDL_Android_NativeWindow_display_l(native_window, overlay); 
 }
 
 static int func_display_overlay(SDL_Vout *vout, SDL_VoutOverlay *overlay)
@@ -189,6 +215,10 @@ SDL_Vout *SDL_VoutAndroid_CreateForANativeWindow()
     if (ISDL_Array__init(&opaque->overlay_manager, 32))
         goto fail;
     if (ISDL_Array__init(&opaque->overlay_pool, 32))
+        goto fail;
+
+    opaque->egl = IJK_EGL_create();
+    if (!opaque->egl)
         goto fail;
 
     vout->opaque_class    = &g_nativewindow_class;
@@ -234,6 +264,7 @@ static void SDL_VoutAndroid_SetNativeWindow_l(SDL_Vout *vout, ANativeWindow *nat
         return;
     }
 
+    IJK_EGL_terminate(opaque->egl);
     SDL_VoutAndroid_invalidateAllBuffers_l(vout);
 
     if (opaque->native_window)

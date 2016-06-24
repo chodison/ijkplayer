@@ -457,11 +457,20 @@ typedef struct FFStatistic
     float vdps;
     float avdelay;
     float avdiff;
-    int   bit_rate;
+    int64_t bit_rate;
 
     FFTrackCacheStatistic video_cache;
     FFTrackCacheStatistic audio_cache;
+
+    SDL_SpeedSampler2 tcp_read_sampler;
 } FFStatistic;
+
+#define FFP_TCP_READ_SAMPLE_RANGE 2000
+inline static void ffp_reset_statistic(FFStatistic *dcc)
+{
+    memset(dcc, 0, sizeof(FFStatistic));
+    SDL_SpeedSampler2Reset(&dcc->tcp_read_sampler, FFP_TCP_READ_SAMPLE_RANGE);
+}
 
 typedef struct FFDemuxCacheControl
 {
@@ -502,6 +511,7 @@ typedef struct FFPlayer {
     AVDictionary *sws_dict;
     AVDictionary *player_opts;
     AVDictionary *swr_opts;
+    AVDictionary *swr_preset_opts;
 
     /* ffplay options specified by the user */
 #ifdef FFP_MERGE
@@ -540,6 +550,7 @@ typedef struct FFPlayer {
 #endif
     int loop;
     int framedrop;
+    int64_t seek_at_start;
     int infinite_buffer;
     enum ShowMode show_mode;
     char *audio_codec_name;
@@ -609,6 +620,7 @@ typedef struct FFPlayer {
     int mediacodec_all_videos;
     int mediacodec_avc;
     int mediacodec_hevc;
+    int mediacodec_mpeg2;
     int mediacodec_auto_rotate;
 
     int opensles;
@@ -618,6 +630,7 @@ typedef struct FFPlayer {
     char *iformat_name;
 
     int no_time_adjust;
+    double preset_5_1_center_mix_level;
 
     struct IjkMediaMeta *meta;
 
@@ -632,12 +645,15 @@ typedef struct FFPlayer {
     float       pf_playback_rate;
     int         pf_playback_rate_changed;
 
+    void               *inject_opaque;
     FFStatistic         stat;
     FFDemuxCacheControl dcc;
+
+    AVApplicationContext *app_ctx;
 } FFPlayer;
 
-#define fftime_to_milliseconds(ts) (av_rescale(ts, 1000, AV_TIME_BASE));
-#define milliseconds_to_fftime(ms) (av_rescale(ms, AV_TIME_BASE, 1000));
+#define fftime_to_milliseconds(ts) (av_rescale(ts, 1000, AV_TIME_BASE))
+#define milliseconds_to_fftime(ms) (av_rescale(ms, AV_TIME_BASE, 1000))
 
 inline static void ffp_reset_internal(FFPlayer *ffp)
 {
@@ -650,6 +666,7 @@ inline static void ffp_reset_internal(FFPlayer *ffp)
     av_dict_free(&ffp->sws_dict);
     av_dict_free(&ffp->player_opts);
     av_dict_free(&ffp->swr_opts);
+    av_dict_free(&ffp->swr_preset_opts);
 
     /* ffplay options specified by the user */
     av_freep(&ffp->input_filename);
@@ -669,6 +686,7 @@ inline static void ffp_reset_internal(FFPlayer *ffp)
     ffp->autoexit               = 0;
     ffp->loop                   = 1;
     ffp->framedrop              = 0; // option
+    ffp->seek_at_start          = 0;
     ffp->infinite_buffer        = -1;
     ffp->show_mode              = SHOW_MODE_NONE;
     av_freep(&ffp->audio_codec_name);
@@ -722,6 +740,7 @@ inline static void ffp_reset_internal(FFPlayer *ffp)
     ffp->mediacodec_all_videos          = 0; // option
     ffp->mediacodec_avc                 = 0; // option
     ffp->mediacodec_hevc                = 0; // option
+    ffp->mediacodec_mpeg2               = 0; // option
     ffp->mediacodec_auto_rotate         = 0; // option
 
     ffp->opensles                       = 0; // option
@@ -742,9 +761,12 @@ inline static void ffp_reset_internal(FFPlayer *ffp)
     ffp->pf_playback_rate               = 1.0f;
     ffp->pf_playback_rate_changed       = 0;
 
+    av_application_closep(&ffp->app_ctx);
+
     msg_queue_flush(&ffp->msg_queue);
 
-    memset(&ffp->stat, 0, sizeof(ffp->stat));
+    ffp->inject_opaque = NULL;
+    ffp_reset_statistic(&ffp->stat);
     ffp_reset_demux_cache_control(&ffp->dcc);
 }
 

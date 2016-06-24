@@ -45,6 +45,7 @@ void      ffp_reset(FFPlayer *ffp);
 
 /* set options before ffp_prepare_async_l() */
 
+void      ffp_set_inject_opaque(FFPlayer *ffp, void *opaque);
 void      ffp_set_option(FFPlayer *ffp, int opt_category, const char *name, const char *value);
 void      ffp_set_option_int(FFPlayer *ffp, int opt_category, const char *name, int64_t value);
 
@@ -82,7 +83,6 @@ bool      ffp_is_flush_packet(AVPacket *pkt);
 Frame    *ffp_frame_queue_peek_writable(FrameQueue *f);
 void      ffp_frame_queue_push(FrameQueue *f);
 
-void      ffp_alloc_picture(FFPlayer *ffp, Uint32 overlay_format);
 int       ffp_queue_picture(FFPlayer *ffp, AVFrame *src_frame, double pts, double duration, int64_t pos, int serial);
 
 int       ffp_get_master_sync_type(VideoState *is);

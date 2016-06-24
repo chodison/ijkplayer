@@ -1,10 +1,24 @@
 tag next
 --------------------------------
+- openssl: upgrade to 1.0.2h
+
+tag k0.5.1
+--------------------------------
+- ffmpeg: fix crash introduced in k0.5.0
+
+tag k0.5.0
+--------------------------------
+- ffmpeg: upgrade to n3.0
+- android: support NDKr11
+
+tag k0.4.5
+--------------------------------
 - ios: support playbackRate change. (iOS 7.0 or later)
 - android: support speed change. (Android 6.0 or later)
 - player: do not link avfilter by default.
 - android: add x86_64 support
 - android: move jjk out to jni4android project
+- android: support OpenGL ES2 render
 
 tag k0.4.4
 --------------------------------
