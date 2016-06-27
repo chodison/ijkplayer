@@ -3468,7 +3468,7 @@ int ffp_prepare_async_l(FFPlayer *ffp, const char *file_name)
     if (av_stristart(file_name, "rtmp", NULL) ||
         av_stristart(file_name, "rtsp", NULL)) {
         // There is total different meaning for 'timeout' option in rtmp
-        av_log(ffp, AV_LOG_WARNING, "remove 'timeout' option for rtmp.\n");
+        av_log(ffp, AV_LOG_WARNING, "remove 'timeout' option for rtsp or rtmp.\n");
         av_dict_set(&ffp->format_opts, "timeout", NULL, 0);
     }
 
